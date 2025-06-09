@@ -405,9 +405,8 @@ class Experiment():
                 self.output_signal =osignal #saving the signal as an atribute of the experiment
             
         # Setting sampling rate and samples per channel
-        print(f"Init clock: {self.fs}Hz")
         task.timing.cfg_samp_clk_timing(rate=self.fs,sample_mode = nidaqmx.constants.AcquisitionType.CONTINUOUS, samps_per_chan=int(self.fs/10))
-        print(f"Actual rate: {task.timing.samp_clk_rate}")
+        print(f"Actual sample rate: {task.timing.samp_clk_rate}")
         self.fs = task.timing.samp_clk_rate #MJB: Set what we want, then ask what we got
 
 
@@ -604,10 +603,17 @@ class Experiment():
             spar_table = efile.create_table(exp, 'specific_parameters', rec.RecordParameters, "Specific Parameters Table")
             spar = spar_table.row
         
+        ### We don't know our fs untill we setup_daq(), so we can't set up the arrays  MJB ###
+        print (f'Setting up data acquisition system. Sample Rate: {self.fs}')
+        self.setup_daq()
+        b_size=int(self.record_length*self.fs) # MJB: the whole thing to int, not just the record len
+
+        ###
         if '/experiment/data' in efile:
             hdf5_data = efile.get_node('/experiment/data')
         else:
-            hdf5_data = efile.create_earray(exp,'data',tables.Float64Atom(), shape=(0,nsensors,int(self.record_length*self.fs)))
+            print(f"Createing hdf5 file:  nSensors {nsensors}, timePonts {b_size}")
+            hdf5_data = efile.create_earray(exp,'data',tables.Float64Atom(), shape=(0,nsensors,b_size)) # MJB: Moved to b_size 
         #Create the table to save the moments bewteen input and oupt signal when there is a voltage type of test
         if self.voltage_check_module:
             if '/experiment/OI_moments' in efile:
@@ -619,11 +625,11 @@ class Experiment():
         efile.flush()
 
         #%% Settup data acquisition and collect data
-        print (f'Setting up data acquisition system. Sample Rate: {self.fs}')
+        ''' MJB Move to before we setup the hdf5 file, so we know how big to make it.
         self.setup_daq()
+        '''
         
         # Defining the buffer
-        b_size=int(self.record_length*self.fs) # MJB: the whole thing to int, not just the record len
         self.__b__ = buffer(b_size)
         if self.__vision__ == True:
             self.__vb__= buffer(int(self.record_length*10))
@@ -780,6 +786,7 @@ class Experiment():
         #MJB: Put this here so we don't do it twice.
         # Make our t based on how many enterys we actualy have
         n_samples = int(record.shape[0])
+        print(f"n_samples: {record.shape}")
         t = np.linspace(0, (n_samples - 1) / self.fs, n_samples)
         
         if decision == True:     
@@ -796,7 +803,7 @@ class Experiment():
             #t = np.arange(0,self.record_length,1/self.fs) #MJB: sameple rate is not an int walking in the door
 
 
-            print(f"record length: {self.record_length} seconds")
+            print(f"record length: {self.record_length} seconds, {record.shape[0]} timePoints")
             print(f"record: {record.shape[0]}")
 
             plt.figure(1)
@@ -832,6 +839,7 @@ class Experiment():
             elif not self.voltage_check_module and not out_sensors: #no voltage tests and no output channel
                 plt.figure(3)
                 for sensor, counter in zip(self.sensors,range(len(self.sensors)-self.__ncam__)): #TODO: same, stop looking into cameras
+
                     plt.plot(t,record[:,counter], label = '%s'%sensor['serial'])
         
                 plt.xlabel('Time (s)')
