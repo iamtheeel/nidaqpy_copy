@@ -242,6 +242,8 @@ class Experiment():
         self.fname = ''
         self.voltage_check_module =voltage_check_module
         self.__efile__ = ''
+
+        self.triggerTime = None #we want to save the timestamp of the trigger time
         
     def continuous_recording(self,t_rec,web_n=False,filter_functions=[],end_time=[]):
         """
@@ -531,7 +533,13 @@ class Experiment():
             exp = efile.create_group("/", 'experiment', 'Experimental data')
         else:
             exp = efile.get_node('/experiment')
-            
+        
+        ### We don't know our fs untill we setup_daq(), so we can't set up the arrays  MJB ###
+        print (f'Setting up data acquisition system. Sample Rate: {self.fs}')
+        self.setup_daq()
+        b_size=int(self.record_length*self.fs) # MJB: the whole thing to int, not just the record len
+        
+        #MJB We need to write this After we get the fs        
         if "/experiment/general_parameters" in efile:
             # opens table for experiment class (general parameters)
             gpar_table = efile.get_node('/experiment/general_parameters')
@@ -544,6 +552,7 @@ class Experiment():
             gpar['value'] = self.fs
             gpar['units'] = 'Hz'
             gpar.append()
+
             
             gpar['parameter'] = 'record_length'
             gpar['value'] = self.record_length
@@ -603,10 +612,11 @@ class Experiment():
             spar_table = efile.create_table(exp, 'specific_parameters', rec.RecordParameters, "Specific Parameters Table")
             spar = spar_table.row
         
-        ### We don't know our fs untill we setup_daq(), so we can't set up the arrays  MJB ###
-        print (f'Setting up data acquisition system. Sample Rate: {self.fs}')
-        self.setup_daq()
-        b_size=int(self.record_length*self.fs) # MJB: the whole thing to int, not just the record len
+
+        
+        
+        
+        
 
         ###
         if '/experiment/data' in efile:
@@ -686,8 +696,9 @@ class Experiment():
             
             
             if trigger and not triggered:
-            # if trigger and not triggered:    
-                print ('Trigger detected, completting buffer ...')
+                self.triggerTime = datetime.datetime.now()  # MJB, add timestamps
+                triggerTime_str=str(self.triggerTime.strftime("%Y_%m_%d %H:%M:%S.%f"))
+                print(f'Trigger detected at {triggerTime_str}, completting buffer ...')
                 # sys.stdout.flush()
                 triggered = True
 
@@ -783,7 +794,7 @@ class Experiment():
             plt.savefig(mydir + '/' + name + 'DISMISSED.jpg', dpi=150)
             plt.close()
         
-        #MJB: Put this here so we don't do it twice.
+        # MJB: Put this here so we don't do it twice.
         # Make our t based on how many enterys we actualy have
         n_samples = int(record.shape[0])
         print(f"n_samples: {record.shape}")
@@ -908,6 +919,13 @@ class Experiment():
             print(f"appending data: hdf5_data:{hdf5_data.shape}, {record.shape}")
             hdf5_data.append(np.expand_dims(record.transpose(), axis = 0))
             data_id = hdf5_data.shape[0]-1
+            # Write the trigger Time: MJB
+            spar['id'] = data_id  # Trigger time is for each run
+            spar['parameter'] = 'triggerTime'
+            spar['value'] = self.triggerTime.timestamp()
+            spar['units'] = 'timestamp'
+            spar.append()
+
             for param in self.parameters['specific']:
                 if self.parameters['specific']==['Date']:
                     spar['id'] = data_id
